@@ -73,10 +73,11 @@ class DisBack(nn.Module):
 		x= self.model(img)
 		return x.view(-1,1)
 
-class QBack(nn.Module):
-	#Computes the back half of Q(c | x). 
+class QBackD(nn.Module):
+	#Computes the back half of Q(c | x) where c is discrete. 
+	#Output is batchSize x dimDiscrete x 1 x 1. 
 	def __init__(self, numFilters): 
-		super(QBack, self).__init__()		
+		super(QBackD, self).__init__()		
 		self.model = nn.Sequential(
 			nn.Conv2d(numFilters * 4,     10, 4, 2, 1, bias=False),
 			nn.BatchNorm2d(10, momentum = .2),
@@ -89,6 +90,28 @@ class QBack(nn.Module):
 	def forward(self, img):
 		x = self.model(img)
 		return x.squeeze()
+
+
+class QBackC(nn.Module):
+	#Computes the back half of Q(c | x) where c is continuous. 
+	#Output is batchSize x dimCont x 1 x 1. 
+	def __init__(self, numFilters): 
+		super(QBackC, self).__init__()		
+		self.model = nn.Sequential(
+			nn.Conv2d(numFilters * 4,     2, 4, 2, 1, bias=False),
+			nn.BatchNorm2d(2, momentum = .2),
+			nn.LeakyReLU(.2, inplace=True),
+			nn.Linear(1,1, bias=False),
+			)				
+		utils.initialize_weights(self)
+
+
+	def forward(self, img):
+		x = self.model(img).squeeze()
+		var1, var2 = torch.var(x, dim=0)
+		mu1, mu2 = torch.mean(x, dim=0)
+		return mu1, mu2, var1, var2
+
 
 
 

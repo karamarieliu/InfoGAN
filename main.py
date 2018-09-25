@@ -30,7 +30,7 @@ parser.add_argument('--lr', type=float, default=0.0002, help='learning rate, def
 parser.add_argument('--c', type=int, default=1, help='numChannels - unsure')
 parser.add_argument('--b1', type=float, default=.5, help='beta1 for Adam')
 parser.add_argument('--b2', type=float, default=.999, help='beta2 for Adam')
-parser.add_argument('--saveInterval', default=1000, help='interval number we save after')
+parser.add_argument('--saveInterval', default=100, help='interval number we save after')
 parser.add_argument('--imageRoot', default= './images', help='images sampled from test data')
 parser.add_argument('--lam', type=float, default= 1, help='mutual information weight')
 parser.add_argument('--restore', type=int, default= 0, help='0 if we are starting a new model. 1 if we want to restore a previous model')
@@ -72,7 +72,8 @@ if not os.path.exists(hp.imageRoot):
 gen = gan.Gen(hp.c, hp.numFiltersG, hp.dimNoise, hp.imageSize, hp.dimCDisc+hp.dimCCont)
 disF = gan.DisFront(hp.c, hp.numFiltersD, hp.imageSize)
 disB = gan.DisBack(hp.numFiltersD)
-qB = gan.QBack(hp.numFiltersD)
+qBD = gan.QBackD(hp.numFiltersD)
+qBC = gan.QBackC(hp.numFiltersD)
 
 
 gOpt = op.Adam(gen.parameters(), lr=hp.lr, betas=(hp.b1, hp.b2))
@@ -85,11 +86,11 @@ for epoch in range(hp.niter):
 
 	for itr, (imgsReal, _) in enumerate(train_loader):
 
-				z, cCont, cDisc = utils.sampleNoise(hp.batchSize, hp.dimNoise, hp.dimCCont, hp.dimCDisc)
+				z, cCont, cDisc = utils.sampleNoise(hp.batchSize, hp.dimNoise, hp.dimCCont, hp.dimCDisc, False)
 
 				#Optimization for Discriminator. 
 				dOpt.zero_grad()
-	  		
+			
 				actualDReal= disF(imgsReal)
 				actualDReal = disB(actualDReal)
 				expectedDReal = Variable(torch.FloatTensor(actualDReal.size()[0],1).fill_(random.uniform(.9, 1.0)), requires_grad=False)
@@ -118,38 +119,35 @@ for epoch in range(hp.niter):
 				#Mutual information loss.
 
 				#Discrete variable loss
-				qResult = qB(actualGFake1)
+				qResult = qBD(actualGFake1)
 				minAct = cDisc.squeeze()
 				mInfLossDis = torch.mean(torch.softmax(qResult, dim=0).reshape(hp.batchSize * 10) * minAct)
 
 				#Continuous variable loss 
-				var = torch.diag(torch.var(qResult, dim=1))
-
-				varI = torch.inverse(var)
+				mu1, mu2, var1, var2 = qBC(actualGFake1)
 				c = cCont.squeeze().reshape(hp.batchSize, -1)
-				mu = torch.mean(qResult, dim=1)
-				mInfLossCon = 0
+				mInfLossCon = -hp.batchSize *(math.log(var1*var2*pow((2*np.pi),4)))
 				for i in range(hp.batchSize):
-					mInfLossCon += -math.log(var[i][i]) - .5*varI[i][i]*(pow((c[i][0]-mu[i]),2) + pow((c[i][1]-mu[i]),2))
-				mInfLossCon = mInfLossCon/hp.batchSize
-				qLoss = -hp.lam*(mInfLossCon + mInfLossDis)
+					mInfLossCon += -.5*(pow((c[i][0]-mu1),2)/(var1 + 1e-8) + pow((c[i][1]-mu2),2)/(var2 + 1e-8))
+				qLoss = -hp.lam*(mInfLossCon/hp.batchSize + mInfLossDis)
 
 				gLoss = gLossTrick + qLoss
 				gLoss.backward()
 				gOpt.step()
 				
 		
-				if (itr % 25) == 0:
-					print("Epoch: [%2d] Iter: [%2d] D_loss: %.8f, G_loss: %.8f" % (epoch, itr, dLoss.item(), gLoss.item()))
+				if (itr % 50) == 0:
+					print("Epoch: [%2d] Iter: [%2d] D_loss: %.8f, G_loss: %.8f \\ G_Loss_QLoss: %.8f, G_Loss_GenLossonDisc: %.8f" 
+						% (epoch, itr, dLoss.item(), gLoss.item(), qLoss.item(), gLossTrick.item()))
 						
 
 
 				if (itr % hp.saveInterval) == 0:
-					torch.save(disF.state_dict(), 'savedModels/disF_%03d_%03d.ckpt' % (epoch, itr) )
-					torch.save(disB.state_dict(), 'savedModels/disB_%03d_%03d.ckpt' % (epoch, itr) ) 
-					torch.save(qB.state_dict(),'savedModels/qB_%03d_%03d.ckpt' % (epoch, itr) )
-					torch.save(gen.state_dict(), 'savedModels/gen_%03d_%03d.ckpt' % (epoch, itr) ) 
-					z2, cCont2, cDisc2 = utils.sampleNoise(hp.batchSize, hp.dimNoise, hp.dimCCont, hp.dimCDisc)
+				#torch.save(disF.state_dict(), 'savedModels/disF_%03d_%03d.ckpt' % (epoch, itr) )
+				#torch.save(disB.state_dict(), 'savedModels/disB_%03d_%03d.ckpt' % (epoch, itr) ) 
+				#torch.save(qB.state_dict(),'savedModels/qB_%03d_%03d.ckpt' % (epoch, itr) )
+				#torch.save(gen.state_dict(), 'savedModels/gen_%03d_%03d.ckpt' % (epoch, itr) ) 
+					z2, _,_ = utils.sampleNoise(hp.batchSize, hp.dimNoise, hp.dimCCont, hp.dimCDisc, True)
 
 					#Testing the Generator.
 					imgFakeTest = gen(z2)
@@ -168,5 +166,5 @@ for epoch in range(hp.niter):
 							actualRealTest= disB(actualRealTest)
 							expectedRealTest = Variable(torch.FloatTensor(actualRealTest.size()[0],1).fill_(random.uniform(.9,1.0)), requires_grad=False)
 							lossRealTest = lossF_D(actualRealTest, expectedRealTest)
-							print("Testing D loss: [%2d]  Testing G loss: [%2d]" % (.5 * (lossRealTest + lossFakeTestD), lossFakeTestG))
+							print("Testing D loss: [%8f]  Testing G loss: [%8f]" % (.5 * (lossRealTest + lossFakeTestD), lossFakeTestG))
 							utilsT.save_image(imgFakeTest.detach(), 'images/testSampleFake_%03d_%03d.png' % (epoch, itr), normalize=True)
