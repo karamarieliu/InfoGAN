@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch
 import numpy as np
+import random
 from torch.autograd import Variable
 from torch.distributions.categorical import Categorical
 
@@ -17,7 +18,7 @@ def initialize_weights(net):
 
 def sampleNoise(batchSize, dimNoise, dimCCont, dimCDisc, test = False):
 	#credit to https://discuss.pytorch.org/t/convert-int-into-one-hot-format/507/4
-	z = Variable(torch.randn(batchSize * dimNoise, 1, 1, 1))
+	z = Variable(torch.randn(batchSize, dimNoise,1,1))
 	cCont = Variable(torch.FloatTensor(batchSize * dimCCont, 1, 1, 1).uniform_(-1.,1.))
 	if test == False:
 		y = torch.LongTensor(batchSize,1).random_() % dimCDisc
@@ -26,6 +27,7 @@ def sampleNoise(batchSize, dimNoise, dimCCont, dimCDisc, test = False):
 	cDisc = torch.FloatTensor(batchSize, dimCDisc)
 	cDisc.zero_()
 	cDisc.scatter_(1,y,1)
-	cDisc = cDisc.resize(batchSize*dimCDisc,1,1,1)
-	z = torch.cat((z, cDisc, cCont)).resize(batchSize, dimNoise + dimCDisc + dimCCont, 1, 1)
+	cDisc = cDisc.resize(batchSize,dimCDisc,1,1)
+	#z = torch.cat((z, cDisc, cCont)).resize(batchSize, dimNoise + dimCDisc + dimCCont, 1, 1)	
+	z = torch.cat((z, cDisc),1).resize(batchSize, dimNoise + dimCDisc, 1, 1)
 	return z, cCont, cDisc

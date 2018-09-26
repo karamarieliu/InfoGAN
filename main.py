@@ -30,10 +30,12 @@ parser.add_argument('--lr', type=float, default=0.0002, help='learning rate, def
 parser.add_argument('--c', type=int, default=1, help='numChannels - unsure')
 parser.add_argument('--b1', type=float, default=.5, help='beta1 for Adam')
 parser.add_argument('--b2', type=float, default=.999, help='beta2 for Adam')
-parser.add_argument('--saveInterval', default=100, help='interval number we save after')
+parser.add_argument('--saveInterval', default=500, help='interval number we save after')
 parser.add_argument('--imageRoot', default= './images', help='images sampled from test data')
-parser.add_argument('--lam', type=float, default= 1, help='mutual information weight')
+parser.add_argument('--ckptRoot', default= './savedModels', help='where to save trained models')
+parser.add_argument('--lam', type=float, default= 10, help='mutual information weight')
 parser.add_argument('--restore', type=int, default= 0, help='0 if we are starting a new model. 1 if we want to restore a previous model')
+parser.add_argument('--modelID', type=int, default= 0, help='optional way to distinguish particular saved model if running in parallel')
 
 
 
@@ -45,8 +47,12 @@ cuda = True if torch.cuda.is_available() else False
 device = torch.device("cuda:0" if cuda else "cpu")
 
 if hp.dataset == 'mnist':
+
+	#Make new folders if don't already exist. 
 	if not os.path.exists(hp.dataRoot):
 			os.mkdir(hp.dataRoot)
+	if not os.path.exists(hp.ckptRoot):
+			os.mkdir(hp.ckptRoot)
 
 	trans = transforms.Compose([
 							   transforms.Resize(hp.imageSize),
@@ -69,18 +75,19 @@ print ('==>>> total testing batch number: {}'.format(len(test_loader)))
 if not os.path.exists(hp.imageRoot):
 	os.mkdir(hp.imageRoot)
 
-gen = gan.Gen(hp.c, hp.numFiltersG, hp.dimNoise, hp.imageSize, hp.dimCDisc+hp.dimCCont)
+#gen = gan.Gen(hp.c, hp.numFiltersG, hp.dimNoise, hp.imageSize, hp.dimCDisc+hp.dimCCont)
+gen = gan.Gen(hp.c, hp.numFiltersG, hp.dimNoise, hp.imageSize, hp.dimCDisc)
 disF = gan.DisFront(hp.c, hp.numFiltersD, hp.imageSize)
 disB = gan.DisBack(hp.numFiltersD)
 qBD = gan.QBackD(hp.numFiltersD)
-qBC = gan.QBackC(hp.numFiltersD)
+#qBC = gan.QBackC(hp.numFiltersD)
 
 
 gOpt = op.Adam(gen.parameters(), lr=hp.lr, betas=(hp.b1, hp.b2))
 dOpt = op.Adam(disF.parameters(), lr=hp.lr,betas=(hp.b1, hp.b2))
 
 
-lossF_D = nn.BCELoss() #loss function for Discriminator
+lossF_D = nn.BCELoss().cuda() #loss function for Discriminator
 
 for epoch in range(hp.niter):
 
@@ -121,17 +128,20 @@ for epoch in range(hp.niter):
 				#Discrete variable loss
 				qResult = qBD(actualGFake1)
 				minAct = cDisc.squeeze()
-				mInfLossDis = torch.mean(torch.softmax(qResult, dim=0).reshape(hp.batchSize * 10) * minAct)
+				mInfLossDis = torch.mean(torch.softmax(qResult, dim=0).log()* minAct)
 
 				#Continuous variable loss 
-				mu1, mu2, var1, var2 = qBC(actualGFake1)
-				c = cCont.squeeze().reshape(hp.batchSize, -1)
-				mInfLossCon = -hp.batchSize *(math.log(var1*var2*pow((2*np.pi),4)))
-				for i in range(hp.batchSize):
-					mInfLossCon += -.5*(pow((c[i][0]-mu1),2)/(var1 + 1e-8) + pow((c[i][1]-mu2),2)/(var2 + 1e-8))
-				qLoss = -hp.lam*(mInfLossCon/hp.batchSize + mInfLossDis)
+				#mu1, mu2, var1, var2 = qBC(actualGFake1)
+				#c = cCont.squeeze().reshape(hp.batchSize, -1)
+				#mInfLossCon = -hp.batchSize *(math.log(var1*var2*pow((2*np.pi),4)))
+				#for i in range(hp.batchSize):
+				#	mInfLossCon += -.5*(pow((c[i][0]-mu1),2)/(var1 + 1e-8) + pow((c[i][1]-mu2),2)/(var2 + 1e-8))
+				#qLoss = -hp.lam*(mInfLossCon/hp.batchSize + mInfLossDis)
 
-				gLoss = gLossTrick + qLoss
+				#CHANGE ME LATER WHEN RESTORE CONTIN.
+				qLoss = mInfLossDis
+				gLoss = gLossTrick - hp.lam*qLoss
+
 				gLoss.backward()
 				gOpt.step()
 				
@@ -143,12 +153,11 @@ for epoch in range(hp.niter):
 
 
 				if (itr % hp.saveInterval) == 0:
-				#torch.save(disF.state_dict(), 'savedModels/disF_%03d_%03d.ckpt' % (epoch, itr) )
-				#torch.save(disB.state_dict(), 'savedModels/disB_%03d_%03d.ckpt' % (epoch, itr) ) 
-				#torch.save(qB.state_dict(),'savedModels/qB_%03d_%03d.ckpt' % (epoch, itr) )
-				#torch.save(gen.state_dict(), 'savedModels/gen_%03d_%03d.ckpt' % (epoch, itr) ) 
+					torch.save(disF.state_dict(), 'savedModels/disF%d_%03d_%03d.ckpt' % (hp.modelID, epoch, itr) )
+					torch.save(disB.state_dict(), 'savedModels/disB%d_%03d_%03d.ckpt' % (hp.modelID, epoch, itr) ) 
+					torch.save(qBD.state_dict(),'savedModels/qBD%d_%03d_%03d.ckpt' % (hp.modelID, epoch, itr) )
+					torch.save(gen.state_dict(), 'savedModels/gen%d_%03d_%03d.ckpt' % (hp.modelID, epoch, itr) ) 
 					z2, _,_ = utils.sampleNoise(hp.batchSize, hp.dimNoise, hp.dimCCont, hp.dimCDisc, True)
-
 					#Testing the Generator.
 					imgFakeTest = gen(z2)
 					actualFakeTest = disF(imgFakeTest)
@@ -167,4 +176,4 @@ for epoch in range(hp.niter):
 							expectedRealTest = Variable(torch.FloatTensor(actualRealTest.size()[0],1).fill_(random.uniform(.9,1.0)), requires_grad=False)
 							lossRealTest = lossF_D(actualRealTest, expectedRealTest)
 							print("Testing D loss: [%8f]  Testing G loss: [%8f]" % (.5 * (lossRealTest + lossFakeTestD), lossFakeTestG))
-							utilsT.save_image(imgFakeTest.detach(), 'images/testSampleFake_%03d_%03d.png' % (epoch, itr), normalize=True)
+							utilsT.save_image(imgFakeTest.detach(), 'images/testSampleFake%d_%03d_%03d.png' % (hp.modelID, epoch, itr), normalize=True)
