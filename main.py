@@ -75,12 +75,10 @@ print ('==>>> total testing batch number: {}'.format(len(test_loader)))
 if not os.path.exists(hp.imageRoot):
 	os.mkdir(hp.imageRoot)
 
-#gen = gan.Gen(hp.c, hp.numFiltersG, hp.dimNoise, hp.imageSize, hp.dimCDisc+hp.dimCCont)
-gen = gan.Gen(hp.c, hp.numFiltersG, hp.dimNoise, hp.imageSize, hp.dimCDisc)
+gen = gan.Gen(hp.c, hp.numFiltersG, hp.dimNoise, hp.imageSize, hp.dimCDisc+hp.dimCCont)
 disF = gan.DisFront(hp.c, hp.numFiltersD, hp.imageSize)
 disB = gan.DisBack(hp.numFiltersD)
-qBD = gan.QBackD(hp.numFiltersD)
-#qBC = gan.QBackC(hp.numFiltersD)
+qB = gan.QBack(hp.numFiltersD, hp.dimCDisc, hp.dimCCont)
 
 
 gOpt = op.Adam(gen.parameters(), lr=hp.lr, betas=(hp.b1, hp.b2))
@@ -126,36 +124,42 @@ for epoch in range(hp.niter):
 				#Mutual information loss.
 
 				#Discrete variable loss
-				qResult = qBD(actualGFake1)
+				qResult, mu, var = qB(actualGFake1)
 				minAct = cDisc.squeeze()
 				mInfLossDis = torch.mean(torch.softmax(qResult, dim=0).log()* minAct)
 
 				#Continuous variable loss 
-				#mu1, mu2, var1, var2 = qBC(actualGFake1)
-				#c = cCont.squeeze().reshape(hp.batchSize, -1)
+				c = cCont.squeeze().reshape(hp.batchSize, -1)
+				mu = mu.repeat(hp.batchSize,1)
+				var = var.repeat(hp.batchSize,1)
+
 				#mInfLossCon = -hp.batchSize *(math.log(var1*var2*pow((2*np.pi),4)))
+				logli = (var.mul(2*np.pi)+1e-8).log() + (c-mu).pow(2).div(var+1e-8)
+				logli = -.5*logli.sum(1).mean()
+				#mInfLossCon = -hp.batchSize *(math.log(var1*var2))
+
 				#for i in range(hp.batchSize):
 				#	mInfLossCon += -.5*(pow((c[i][0]-mu1),2)/(var1 + 1e-8) + pow((c[i][1]-mu2),2)/(var2 + 1e-8))
-				#qLoss = -hp.lam*(mInfLossCon/hp.batchSize + mInfLossDis)
+				#qLoss = hp.lam*(mInfLossCon/hp.batchSize + mInfLossDis)
 
-				#CHANGE ME LATER WHEN RESTORE CONTIN.
-				qLoss = mInfLossDis
-				gLoss = gLossTrick - hp.lam*qLoss
+				qLoss = hp.lam*(.1*logli + mInfLossDis)
+
+				gLoss = gLossTrick - qLoss
 
 				gLoss.backward()
 				gOpt.step()
 				
 		
 				if (itr % 50) == 0:
-					print("Epoch: [%2d] Iter: [%2d] D_loss: %.8f, G_loss: %.8f \\ G_Loss_QLoss: %.8f, G_Loss_GenLossonDisc: %.8f" 
-						% (epoch, itr, dLoss.item(), gLoss.item(), qLoss.item(), gLossTrick.item()))
+					print("Epoch: [%2d] Iter: [%2d] D_loss: %.8f, G_loss: %.8f \ G_Loss_QLoss: %.8f, ContLoss*.1: %.8f, DiscLoss: %.8f, G_Loss_GenLossonDisc: %.8f" 
+						% (epoch, itr, dLoss.item(), gLoss.item(), qLoss.item(), .1*logli.item(), mInfLossDis.item(), gLossTrick.item()))
 						
 
 
 				if (itr % hp.saveInterval) == 0:
 					torch.save(disF.state_dict(), 'savedModels/disF%d_%03d_%03d.ckpt' % (hp.modelID, epoch, itr) )
 					torch.save(disB.state_dict(), 'savedModels/disB%d_%03d_%03d.ckpt' % (hp.modelID, epoch, itr) ) 
-					torch.save(qBD.state_dict(),'savedModels/qBD%d_%03d_%03d.ckpt' % (hp.modelID, epoch, itr) )
+					torch.save(qB.state_dict(),'savedModels/qB%d_%03d_%03d.ckpt' % (hp.modelID, epoch, itr) )
 					torch.save(gen.state_dict(), 'savedModels/gen%d_%03d_%03d.ckpt' % (hp.modelID, epoch, itr) ) 
 					z2, _,_ = utils.sampleNoise(hp.batchSize, hp.dimNoise, hp.dimCCont, hp.dimCDisc, True)
 					#Testing the Generator.
