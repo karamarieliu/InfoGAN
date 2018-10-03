@@ -73,6 +73,7 @@ class DisBack(nn.Module):
 		x= self.model(img)
 		return x.view(-1,1)
 
+
 class QBack(nn.Module):
 	#Computes the back half of Q(c | x) where c is discrete. 
 	#Output is batchSize x dimDiscrete x 1 x 1. 
@@ -100,9 +101,9 @@ class QBack(nn.Module):
 		x = self.model(img)
 
 		logits = self.discrete(x).squeeze()
-		cont = self.cont(x).squeeze()
-		var = torch.var(cont, dim=0)
-		mu = torch.mean(cont, dim=0)
+		mu = self.cont(x).squeeze()
+		var =mu.exp()
+
 		return logits, mu, var
 
 

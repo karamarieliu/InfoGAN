@@ -25,8 +25,8 @@ def sampleNoise(batchSize, dimNoise, dimCCont, dimCDisc, test = False):
 		y = torch.LongTensor(batchSize,1).random_() % dimCDisc
 		#cCont = Variable(torch.FloatTensor(batchSize,dimCCont,1, 1).uniform_(-1.,1.))
 	else:
-		#cc = [[-2,0],[-1,0],[0,0],[1,0],[2,0],[0,-2],[0,0],[0,2]]*8
-		#cCont = Variable(torch.FloatTensor(cc)).resize(batchSize,dimCCont, 1, 1)
+		cc = [[-2,0],[-1,0],[0,0],[1,0],[2,0],[0,-2],[0,0],[0,2]]*8
+		cCont = Variable(torch.FloatTensor(cc)).resize(batchSize,dimCCont, 1, 1)
 		y = torch.LongTensor([[i]*8 for i in range(8)]).resize(batchSize,1)
 	cDisc = torch.FloatTensor(batchSize, dimCDisc)
 	cDisc.zero_()

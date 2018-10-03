@@ -80,7 +80,7 @@ disF = gan.DisFront(hp.c, hp.numFiltersD, hp.imageSize)
 disB = gan.DisBack(hp.numFiltersD)
 qB = gan.QBack(hp.numFiltersD, hp.dimCDisc, hp.dimCCont)
 
-
+params = list(disF.parameters()) + list(disB.parameters()) + list(qB.parameters())
 gOpt = op.Adam(gen.parameters(), lr=hp.lr, betas=(hp.b1, hp.b2))
 dOpt = op.Adam(disF.parameters(), lr=hp.lr,betas=(hp.b1, hp.b2))
 
@@ -130,8 +130,8 @@ for epoch in range(hp.niter):
 
 				#Continuous variable loss 
 				c = cCont.squeeze().reshape(hp.batchSize, -1)
-				mu = mu.repeat(hp.batchSize,1)
-				var = var.repeat(hp.batchSize,1)
+				#mu = mu.repeat(hp.batchSize,1)
+				#var = var.repeat(hp.batchSize,1)
 
 				#mInfLossCon = -hp.batchSize *(math.log(var1*var2*pow((2*np.pi),4)))
 				logli = (var.mul(2*np.pi)+1e-8).log() + (c-mu).pow(2).div(var+1e-8)
