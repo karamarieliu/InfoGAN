@@ -19,20 +19,20 @@ def initialize_weights(net):
 def sampleNoise(batchSize, dimNoise, dimCCont, dimCDisc, test = False):
 	#credit to https://discuss.pytorch.org/t/convert-int-into-one-hot-format/507/4
 	z = Variable(torch.randn(batchSize, dimNoise,1,1))
-	cCont = Variable(torch.FloatTensor(batchSize * dimCCont, 1, 1, 1).uniform_(-1.,1.))
-	cCont = Variable(torch.FloatTensor(batchSize,dimCCont,1, 1).uniform_(-1.,1.))
+	
 	if test == False:
 		y = torch.LongTensor(batchSize,1).random_() % dimCDisc
-		#cCont = Variable(torch.FloatTensor(batchSize,dimCCont,1, 1).uniform_(-1.,1.))
+		cCont = Variable(torch.FloatTensor(batchSize,dimCCont,1, 1).uniform_(-1.,1.))
 	else:
-		cc = [[-2,0],[-1,0],[0,0],[1,0],[2,0],[0,-2],[0,0],[0,2]]*8
+		cc = [[-1,0],[-.5,0],[0,0],[.5,0],[1,0],[0,-1],[0,0],[0,1]]*8
 		cCont = Variable(torch.FloatTensor(cc)).resize(batchSize,dimCCont, 1, 1)
 		y = torch.LongTensor([[i]*8 for i in range(8)]).resize(batchSize,1)
+
 	cDisc = torch.FloatTensor(batchSize, dimCDisc)
 	cDisc.zero_()
 	cDisc.scatter_(1,y,1)
 	cDisc = cDisc.resize(batchSize,dimCDisc,1,1)
-	if test:
-		print(cCont)
-	z = torch.cat((z, cDisc, cCont),1).resize(batchSize, dimNoise + dimCDisc + dimCCont, 1, 1)	
+
+	#z = torch.cat((z, cDisc, cCont),1).resize(batchSize, dimNoise + dimCDisc + dimCCont, 1, 1)	
+	z = torch.cat((z, cDisc),1).resize(batchSize, dimNoise + dimCDisc, 1, 1)
 	return z, cCont, cDisc

@@ -91,7 +91,10 @@ class QBack(nn.Module):
 			nn.LeakyReLU(.2, inplace=True),
 			)
 
-		self.cont = nn.Sequential(
+		self.mu = nn.Sequential(
+			nn.Conv2d(numFilters*2, dimCont, 1, bias=False),
+			)
+		self.var = nn.Sequential(
 			nn.Conv2d(numFilters*2, dimCont, 1, bias=False),
 			)
 
@@ -101,8 +104,8 @@ class QBack(nn.Module):
 		x = self.model(img)
 
 		logits = self.discrete(x).squeeze()
-		mu = self.cont(x).squeeze()
-		var =mu.exp()
+		mu = self.mu(x).squeeze()
+		var =self.var(x).squeeze().exp()
 
 		return logits, mu, var
 
